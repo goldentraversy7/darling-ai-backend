@@ -1,9 +1,11 @@
 import os
 import time
 import json
+import base64
 import requests
 import pandas as pd
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
@@ -13,12 +15,16 @@ from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from newsapi import NewsApiClient
 from dotenv import load_dotenv  # Import dotenv to load environment variables
 import praw
+from io import BytesIO
+
+matplotlib.use("Agg")
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Load NewsAPI Key
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
 # Initialize NLTK Sentiment Analyzer
 import nltk
@@ -49,11 +55,50 @@ class StockService:
         Fetch stock data from multiple sources for a given stock symbol.
         """
         try:
-            news_articles = analyze_combined_news(symbol)
-            return news_articles
+            # Fetch news articles (ensure `analyze_combined_news` is defined elsewhere)
+            # news_articles = analyze_combined_news(symbol)
+
+            # Analyze stock data and generate the plot
+            stock_data, plot_buffer, plot_figure = analyze_stock_data(symbol)
+
+            # Convert DataFrame to dictionary
+            stock_data = stock_data.to_dict(orient="records")
+
+            # Encode plot as Base64
+            plot_base64 = StockService.encode_plot_as_base64(plot_figure)
+
+            # Create response dictionary
+            response = {
+                "stock_data": stock_data,
+                "plot": plot_base64,
+                # "news_articles": news_articles,
+            }
+
+            return response  # Convert response to JSON
         except requests.exceptions.RequestException as e:
             print(f"Error fetching stock data: {e}")
-            return {"error": str(e)}
+            return json.dumps({"error": f"Request error: {str(e)}"})
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            return json.dumps({"error": f"Unexpected error: {str(e)}"})
+
+    @staticmethod
+    def encode_plot_as_base64(plot_figure):
+        """
+        Encode a matplotlib plot as a Base64 string.
+        """
+        try:
+            # Create a BytesIO buffer
+            buffer = BytesIO()
+            plot_figure.savefig(buffer, format="png")  # Save the plot to the buffer
+            buffer.seek(0)  # Move to the start of the buffer
+            # Encode the buffer to Base64
+            plot_base64 = base64.b64encode(buffer.read()).decode("utf-8")
+            buffer.close()  # Close the buffer to release resources
+            return f"data:image/png;base64,{plot_base64}"
+        except Exception as e:
+            print(f"Error encoding plot as Base64: {e}")
+            raise
 
 
 # Sentiment Analysis Function
@@ -263,6 +308,123 @@ def analyze_combined_news(symbol):
     combined_news = pd.concat(
         [yahoo_news, newsapi_articles, reddit_posts], ignore_index=True
     )
-    print(combined_news)
 
     return combined_news.to_dict(orient="records")
+
+
+def analyze_stock_data(symbol):
+    stock_data = fetch_stock_data(symbol)
+    stock_data = calculate_rsi(stock_data)
+    stock_data = detect_market_trends(stock_data)
+
+    plot_buffer, plot_figure = plot_market_trends(
+        stock_data, symbol
+    )  # Generate the plot
+    return stock_data, plot_buffer, plot_figure
+
+
+# Function to fetch stock data with 15-minute interval
+def fetch_stock_data(symbol, interval="15min"):
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={symbol}&interval={interval}&apikey={ALPHA_VANTAGE_API_KEY}"
+    response = requests.get(url)
+    data = response.json()
+
+    timeseries = data.get(f"Time Series ({interval})", {})
+    if not timeseries:
+        raise ValueError("Failed to fetch data. Check the symbol or API usage limits.")
+
+    df = pd.DataFrame.from_dict(timeseries, orient="index")
+    df = df.rename(
+        columns={
+            "1. open": "open",
+            "2. high": "high",
+            "3. low": "low",
+            "4. close": "close",
+            "5. volume": "volume",
+        }
+    ).astype(float)
+    df.index = pd.to_datetime(df.index)
+    df.sort_index(inplace=True)
+    print(df)
+    return df
+
+
+# Function to calculate RSI
+def calculate_rsi(df, period=14):
+    delta = df["close"].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    df["RSI"] = 100 - (100 / (1 + rs))
+    return df
+
+
+# Detect bull and bear trends based on moving averages
+def detect_market_trends(df, short_window=20, long_window=50):
+    df["SMA_short"] = df["close"].rolling(window=short_window).mean()
+    df["SMA_long"] = df["close"].rolling(window=long_window).mean()
+    df["Trend"] = np.where(df["SMA_short"] > df["SMA_long"], "Bull", "Bear")
+    return df
+
+
+def plot_market_trends(stock_data, symbol):
+    fig, ax = plt.subplots(figsize=(14, 8))
+
+    # Plot the data
+    ax.plot(
+        stock_data.index,
+        stock_data["close"],
+        label="Close Price",
+        color="blue",
+        linewidth=1,
+    )
+    ax.plot(
+        stock_data.index,
+        stock_data["SMA_short"],
+        label="Short-term SMA (20)",
+        color="orange",
+        linewidth=1,
+    )
+    ax.plot(
+        stock_data.index,
+        stock_data["SMA_long"],
+        label="Long-term SMA (50)",
+        color="green",
+        linewidth=1,
+    )
+
+    # Highlight bull and bear markets
+    ax.fill_between(
+        stock_data.index,
+        stock_data["close"],
+        stock_data["SMA_long"],
+        where=(stock_data["close"] > stock_data["SMA_long"]),
+        color="green",
+        alpha=0.2,
+        label="Bull Market",
+    )
+    ax.fill_between(
+        stock_data.index,
+        stock_data["close"],
+        stock_data["SMA_long"],
+        where=(stock_data["close"] < stock_data["SMA_long"]),
+        color="red",
+        alpha=0.2,
+        label="Bear Market",
+    )
+
+    # Customize the plot
+    ax.set_title(f"{symbol.upper()} Market Trends (15-Minute Interval)", fontsize=16)
+    ax.set_xlabel("Time", fontsize=12)
+    ax.set_ylabel("Price (USD)", fontsize=12)
+    ax.legend(fontsize=10)
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+
+    # Save the plot to a buffer
+    buffer = BytesIO()
+    plt.savefig(buffer, format="png", dpi=300)
+    buffer.seek(0)
+    plt.close()
+
+    return buffer, fig
