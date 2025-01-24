@@ -71,3 +71,7 @@ docs/_build/
 
 # Pyre type checker
 .pyre/
+
+.code-workspace
+yahoo_news_data.csv
+darling-ai-backend.code-workspace
