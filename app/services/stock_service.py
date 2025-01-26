@@ -56,28 +56,29 @@ class StockService:
         """
         try:
             # Fetch news articles (ensure `analyze_combined_news` is defined elsewhere)
-            # news_articles = analyze_combined_news(symbol)
+            news_articles = analyze_combined_news(symbol)
 
             # Analyze stock data and generate the plot
             stock_data, plot_buffer, plot_figure = analyze_stock_data(symbol)
 
-            # Convert DataFrame to dictionary
-            stock_data = stock_data.to_dict(orient="records")
+            # Handle NaN values and convert DataFrame to JSON-serializable format
+            if stock_data is not None:
+                # Replace NaN with None (which converts to null in JSON)
+                stock_data = stock_data.replace([np.nan, np.inf, -np.inf], None).to_dict(orient="records")
+            else:
+                stock_data = []
 
             # Encode plot as Base64
-            plot_base64 = StockService.encode_plot_as_base64(plot_figure)
+            plot_base64 = StockService.encode_plot_as_base64(plot_figure) if plot_figure else None
 
             # Create response dictionary
             response = {
                 "stock_data": stock_data,
                 "plot": plot_base64,
-                # "news_articles": news_articles,
+                "news_articles": news_articles,
             }
 
             return response  # Convert response to JSON
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching stock data: {e}")
-            return json.dumps({"error": f"Request error: {str(e)}"})
         except Exception as e:
             print(f"Unexpected error: {e}")
             return json.dumps({"error": f"Unexpected error: {str(e)}"})
@@ -313,14 +314,28 @@ def analyze_combined_news(symbol):
 
 
 def analyze_stock_data(symbol):
-    stock_data = fetch_stock_data(symbol)
-    stock_data = calculate_rsi(stock_data)
-    stock_data = detect_market_trends(stock_data)
+    try:
+        # Fetch stock data
+        stock_data = fetch_stock_data(symbol)
 
-    plot_buffer, plot_figure = plot_market_trends(
-        stock_data, symbol
-    )  # Generate the plot
-    return stock_data, plot_buffer, plot_figure
+        # Perform analysis
+        stock_data = calculate_rsi(stock_data)
+        stock_data = detect_market_trends(stock_data)
+
+        # Generate the plot
+        plot_buffer, plot_figure = plot_market_trends(stock_data, symbol)
+        stock_data = stock_data[::-1]  # Reverse the DataFrame
+        stock_data["dTime"] = stock_data.index
+        print(stock_data)
+        # Return the analyzed data and plot
+        return stock_data, plot_buffer, plot_figure
+
+    except Exception as e:
+        # Log the error for debugging
+        print(f"Error in analyzing stock data for symbol '{symbol}': {e}")
+
+        # Return empty values or default placeholders
+        return None, None, None
 
 
 # Function to fetch stock data with 15-minute interval
@@ -345,7 +360,6 @@ def fetch_stock_data(symbol, interval="15min"):
     ).astype(float)
     df.index = pd.to_datetime(df.index)
     df.sort_index(inplace=True)
-    print(df)
     return df
 
 
