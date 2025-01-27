@@ -1,10 +1,11 @@
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 import os
+import re
 
 # Initialize NLTK Sentiment Analyzer
 sia = SentimentIntensityAnalyzer()
@@ -59,7 +60,7 @@ def scrape_yahoo_finance_news(symbol):
             if link_elem and link_elem["href"].startswith("/")
             else link_elem["href"] if link_elem else None
         )
-        date = (
+        date_text = (
             item.select_one("div.publishing").get_text(strip=True)
             if item.select_one("div.publishing")
             else "No date available"
@@ -71,8 +72,9 @@ def scrape_yahoo_finance_news(symbol):
         )
 
         if title and link:
+            utc_date = parse_relative_date(date_text)
             sentiment = analyze_sentiment(f"{title} {summary}")
-            articles.append((symbol, title, link, date, summary, sentiment))
+            articles.append((symbol, title, link, utc_date, summary, sentiment))
 
     # Convert to DataFrame
     new_data = pd.DataFrame(
@@ -114,6 +116,27 @@ def analyze_sentiment(text):
     sentiment_score = sia.polarity_scores(text)["compound"]
     return round(sentiment_score, 2)
 
+def parse_relative_date(date_text):
+    """
+    Parse relative date text (e.g., '9 hours ago', 'Yahoo•9 hours ago') into a UTC datetime string.
+    """
+    now = datetime.now(timezone.utc)  # Use timezone-aware UTC datetime
+
+    # Extract the relative time part using regex
+    match = re.search(r"(\d+)\s+(hours|minutes|days)\s+ago", date_text, re.IGNORECASE)
+    if match:
+        value, unit = int(match.group(1)), match.group(2).lower()
+
+        # Adjust the current time based on the relative unit
+        if unit == "hours":
+            return (now - timedelta(hours=value)).strftime("%Y-%m-%d")
+        elif unit == "minutes":
+            return (now - timedelta(minutes=value)).strftime("%Y-%m-%d")
+        elif unit == "days":
+            return (now - timedelta(days=value)).strftime("%Y-%m-%d")
+
+    # If no match is found, return the current UTC time as a fallback
+    return now.strftime("%Y-%m-%d")
 
 # Example usage for testing
 if __name__ == "__main__":

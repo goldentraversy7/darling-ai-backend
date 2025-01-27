@@ -220,7 +220,7 @@ def fetch_articles_with_sentiments(keyword, start_date, sources=None):
         sentiment = analyze_sentiment(content)
         date = article.get("publishedAt", "No date available")
         date = (
-            datetime.strptime(date, "%Y-%m-%dT%H:%M:%SZ").strftime("%d-%b-%Y")
+            datetime.strptime(date, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d")
             if date != "No date available"
             else date
         )
@@ -247,7 +247,7 @@ def fetch_reddit_posts(symbol):
         for post in reddit_posts:
             # Analyze the sentiment of the post title
             summary = (
-                post.selftext[:100]
+                f"{post.selftext[:100]}..."
                 if hasattr(post, "selftext")
                 else "No summary available"
             )
@@ -259,7 +259,7 @@ def fetch_reddit_posts(symbol):
                     "Title": post.title,
                     "URL": f"https://reddit.com{post.permalink}",
                     "Date": datetime.fromtimestamp(post.created_utc).strftime(
-                        "%d-%b-%Y"
+                        "%Y-%m-%d"
                     ),
                     "Summary": summary,
                     "Sentiment": sentiment_score,
@@ -290,7 +290,10 @@ def analyze_combined_news(symbol):
         )
 
     try:
-        newsapi_articles = fetch_newsapi_articles(symbol)
+        newsapi_articles = pd.DataFrame(
+            columns=["Title", "URL", "Date", "Summary", "Sentiment"]
+        )
+        # newsapi_articles = fetch_newsapi_articles(symbol)
     except Exception as e:
         print(f"Error fetching NewsAPI articles for '{symbol}': {e}")
         newsapi_articles = pd.DataFrame(
