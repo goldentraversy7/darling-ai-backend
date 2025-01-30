@@ -290,10 +290,7 @@ def analyze_combined_news(symbol):
         )
 
     try:
-        newsapi_articles = pd.DataFrame(
-            columns=["Title", "URL", "Date", "Summary", "Sentiment"]
-        )
-        # newsapi_articles = fetch_newsapi_articles(symbol)
+        newsapi_articles = fetch_newsapi_articles(symbol)
     except Exception as e:
         print(f"Error fetching NewsAPI articles for '{symbol}': {e}")
         newsapi_articles = pd.DataFrame(
