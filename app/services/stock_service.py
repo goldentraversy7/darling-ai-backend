@@ -64,12 +64,16 @@ class StockService:
             # Handle NaN values and convert DataFrame to JSON-serializable format
             if stock_data is not None:
                 # Replace NaN with None (which converts to null in JSON)
-                stock_data = stock_data.replace([np.nan, np.inf, -np.inf], None).to_dict(orient="records")
+                stock_data = stock_data.replace(
+                    [np.nan, np.inf, -np.inf], None
+                ).to_dict(orient="records")
             else:
                 stock_data = []
 
             # Encode plot as Base64
-            plot_base64 = StockService.encode_plot_as_base64(plot_figure) if plot_figure else None
+            plot_base64 = (
+                StockService.encode_plot_as_base64(plot_figure) if plot_figure else None
+            )
 
             # Create response dictionary
             response = {
@@ -241,7 +245,7 @@ def fetch_reddit_posts(symbol):
     """
     try:
         # Search for posts in the 'stocks' subreddit
-        reddit_posts = reddit.subreddit("stocks").search(symbol, limit=50)
+        reddit_posts = reddit.subreddit("stocks").search(symbol, limit=20)
         articles_data = []
 
         for post in reddit_posts:

@@ -1,6 +1,7 @@
 import os
 import time
 import json
+from urllib import response
 import requests
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -51,19 +52,7 @@ class BackgroundService:
             if start_date is None or start_date > today:
                 start_date = today - timedelta(days=7)
 
-            # Fetch news articles (ensure `analyze_combined_news` is defined elsewhere)
-            google_news = fetch_google_news(query, start_date, end_date)
-            bing_news = fetch_bing_news(query, start_date, end_date)
-            yahoo_news = fetch_yahoo_news(query, start_date, end_date)
-            # bloomberg_news = fetch_bloomberg_news(query, start_date, end_date)
-
-            # Create response dictionary
-            response = {
-                "google_news": google_news,
-                "bing_news": bing_news,
-                "yahoo_news": yahoo_news,
-                # "bloomberg_news": bloomberg_news,
-            }
+            response = fetch_combined_news(query, start_date, end_date)
 
             return response  # Convert response to JSON
         except Exception as e:
@@ -86,25 +75,14 @@ class BackgroundService:
             if start_date is None or start_date > today:
                 start_date = today - timedelta(days=7)
 
-            # Fetch news articles (ensure `analyze_combined_news` is defined elsewhere)
-            twitter_posts = fetch_twitter_posts(query, start_date, end_date)
-            linkedin_posts = fetch_linkedin_posts(query)
-            instagram_posts = fetch_instagram_posts(query)
-
-            # Create response dictionary
-            response = {
-                "twitter": twitter_posts,
-                "linkedin": linkedin_posts,
-                "instagram": instagram_posts,
-            }
-
+            response = fetch_combined_posts(query, start_date, end_date)
             return response  # Convert response to JSON
         except Exception as e:
             print(f"Unexpected error: {e}")
             return json.dumps({"error": f"Unexpected error: {str(e)}"})
 
     @staticmethod
-    def fetch_public_records(query, start_date=None, end_date=None, count=50):
+    def fetch_public_records(query, start_date=None, end_date=None, count=20):
         """Fetch public records: criminal records, court cases, and legal reports."""
         try:
             today = datetime.today().date()
@@ -118,13 +96,7 @@ class BackgroundService:
             # inmate_records = fetch_inmate_records(query, count)
             # business_records = fetch_business_records(query, count)
 
-            response = {
-                "court_records": court_records,
-                # "criminal_records": criminal_records,
-                # "inmate_records": inmate_records,
-                # "business_records": business_records,
-            }
-            return response
+            return court_records
         except Exception as e:
             print(f"Unexpected error: {e}")
             return json.dumps({"error": f"Unexpected error: {str(e)}"})
@@ -146,7 +118,6 @@ def fetch_google_news(query, start_date, end_date):
             df = pd.concat(
                 [df, pd.DataFrame(result)], ignore_index=True
             )  # Append new data to existing DataFrame
-        print(df.columns)
 
         news_list = []
         for ind in df.index:
@@ -172,16 +143,16 @@ def fetch_google_news(query, start_date, end_date):
             }
             news_list.append(news_item)
 
-        news_df = pd.DataFrame(news_list)
+        return pd.DataFrame(
+            news_list, columns=["Title", "URL", "Date", "Desc", "Media", "Img"]
+        )
 
     except Exception as e:
         print(f"Error fetching Google news for '{query}': {e}")
-        news_df = pd.DataFrame(columns=["Title", "URL", "Date", "Desc", "Media", "Img"])
-
-    return news_df.to_dict(orient="records")
+        return pd.DataFrame(columns=["Title", "URL", "Date", "Desc", "Media", "Img"])
 
 
-def fetch_bing_news(query, start_date=None, end_date=None, count=50):
+def fetch_bing_news(query, start_date=None, end_date=None, count=20):
     BING_ENDPOINT = "https://api.bing.microsoft.com/v7.0/news/search"
     try:
         headers = {"Ocp-Apim-Subscription-Key": BING_API_KEY}
@@ -198,7 +169,9 @@ def fetch_bing_news(query, start_date=None, end_date=None, count=50):
 
         if "value" not in data:
             print("No Bing news found.")
-            return []
+            return pd.DataFrame(
+                columns=["Title", "URL", "Date", "Desc", "Media", "Img"]
+            )
 
         news_list = []
         for item in data["value"]:
@@ -222,13 +195,13 @@ def fetch_bing_news(query, start_date=None, end_date=None, count=50):
             }
             news_list.append(news_item)
 
-        news_df = pd.DataFrame(news_list)
+        return pd.DataFrame(
+            news_list, columns=["Title", "URL", "Date", "Desc", "Media", "Img"]
+        )
 
     except Exception as e:
-        print(f"Error fetching Google news for '{query}': {e}")
-        news_df = pd.DataFrame(columns=["Title", "URL", "Date", "Desc", "Media", "Img"])
-
-    return news_df.to_dict(orient="records")
+        print(f"Error fetching Bing news for '{query}': {e}")
+        return pd.DataFrame(columns=["Title", "URL", "Date", "Desc", "Media", "Img"])
 
 
 def fetch_yahoo_news(query, start_date=None, end_date=None):
@@ -259,16 +232,16 @@ def fetch_yahoo_news(query, start_date=None, end_date=None):
             }
             news_list.append(news_item)
 
-        news_df = pd.DataFrame(news_list)
+        return pd.DataFrame(
+            news_list, columns=["Title", "URL", "Date", "Desc", "Media", "Img"]
+        )
 
     except Exception as e:
         print(f"Error fetching Google news for '{query}': {e}")
-        news_df = pd.DataFrame(columns=["Title", "URL", "Date", "Desc", "Media", "Img"])
-
-    return news_df.to_dict(orient="records")
+        return pd.DataFrame(columns=["Title", "URL", "Date", "Desc", "Media", "Img"])
 
 
-def fetch_bloomberg_news(start_date=None, end_date=None):
+def fetch_bloomberg_news(query, start_date=None, end_date=None):
     try:
         # Bloomberg RSS Feed URL for Technology News (Change as needed)
         rss_url = "https://www.bloomberg.com/feed/podcast/technology.xml"
@@ -297,28 +270,53 @@ def fetch_bloomberg_news(start_date=None, end_date=None):
             }
             news_list.append(news_item)
 
-        return news_list
+        return pd.DataFrame(
+            news_list, columns=["Title", "URL", "Date", "Desc", "Media", "Img"]
+        )
 
     except Exception as e:
         print(f"Error fetching Bloomberg News: {e}")
-        return []
+        return pd.DataFrame(columns=["Title", "URL", "Date", "Desc", "Media", "Img"])
 
 
 # Combine News from Multiple Sources
-def analyze_combined_news(query):
+def fetch_combined_news(query, start_date, end_date):
     """
-    Combine Yahoo Finance and NewsAPI articles for the given stock query.
+    Combine Google and NewsAPI articles for the given stock query.
     """
     try:
-        google_news = fetch_google_news(query)
+        google_news = fetch_google_news(query, start_date, end_date)
     except Exception as e:
-        print(f"Error fetching Yahoo Finance news for '{query}': {e}")
+        print(f"Error fetching Google news for '{query}': {e}")
         google_news = pd.DataFrame(
-            columns=["Title", "URL", "Date", "Summary", "Sentiment"]
+            columns=["Title", "URL", "Date", "Desc", "Media", "Img"]
+        )
+    try:
+        bing_news = fetch_bing_news(query, start_date, end_date)
+    except Exception as e:
+        print(f"Error fetching bing news for '{query}': {e}")
+        bing_news = pd.DataFrame(
+            columns=["Title", "URL", "Date", "Desc", "Media", "Img"]
+        )
+    try:
+        yahoo_news = fetch_yahoo_news(query, start_date, end_date)
+    except Exception as e:
+        print(f"Error fetching Yahoo news for '{query}': {e}")
+        yahoo_news = pd.DataFrame(
+            columns=["Title", "URL", "Date", "Desc", "Media", "Img"]
+        )
+    try:
+        bloomberg_news = fetch_bloomberg_news(query, start_date, end_date)
+    except Exception as e:
+        print(f"Error fetching bloomberg news for '{query}': {e}")
+        bloomberg_news = pd.DataFrame(
+            columns=["Title", "URL", "Date", "Desc", "Media", "Img"]
         )
 
     # Combine the results
-    combined_news = pd.concat([google_news], ignore_index=True)
+    combined_news = pd.concat(
+        [google_news, bing_news, yahoo_news, bloomberg_news], ignore_index=True
+    )
 
     return combined_news.to_dict(orient="records")
 
@@ -355,11 +353,11 @@ def fetch_twitter_posts(query, start_date=None, end_date=None, max_results=20):
                 }
             )
 
-        return tweets
+        return pd.DataFrame(tweets, columns=["Text", "URL", "Date", "Media", "Img"])
 
     except Exception as e:
-        print(f"Error fetching Twitter posts: {e}")
-        return []
+        print(f"Error fetching Twitter Posts: {e}")
+        return pd.DataFrame(columns=["Text", "URL", "Date", "Media", "Img"])
 
 
 def fetch_linkedin_posts(query, count=10):
@@ -388,11 +386,11 @@ def fetch_linkedin_posts(query, count=10):
                 }
             )
 
-        return posts
+        return pd.DataFrame(posts, columns=["Text", "URL", "Date", "Media", "Img"])
 
     except Exception as e:
-        print(f"Error fetching LinkedIn posts: {e}")
-        return []
+        print(f"Error fetching LinkedIn Posts: {e}")
+        return pd.DataFrame(columns=["Text", "URL", "Date", "Media", "Img"])
 
 
 def fetch_instagram_posts(query, count=10):
@@ -410,19 +408,48 @@ def fetch_instagram_posts(query, count=10):
                     "Date": datetime.datetime.strptime(
                         item["timestamp"], "%Y-%m-%dT%H:%M:%S%z"
                     ).strftime("%Y-%m-%d %H:%M"),
-                    "Image": item.get("media_url", ""),
                     "Media": "Instagram",
+                    "Image": item.get("media_url", ""),
                 }
             )
 
-        return posts
+        return pd.DataFrame(posts, columns=["Text", "URL", "Date", "Media", "Img"])
 
     except Exception as e:
-        print(f"Error fetching Instagram posts: {e}")
-        return []
+        print(f"Error fetching Instagram Posts: {e}")
+        return pd.DataFrame(columns=["Text", "URL", "Date", "Media", "Img"])
 
 
-def fetch_us_court_records(query, start_date=None, end_date=None, count=50):
+# Combine News from Multiple Sources
+def fetch_combined_posts(query, start_date, end_date):
+    """
+    Combine Twitter and LinkedIn and Instagram posts for the given stock query.
+    """
+    try:
+        twitter_posts = fetch_twitter_posts(query, start_date, end_date)
+    except Exception as e:
+        print(f"Error fetching Google news for '{query}': {e}")
+        twitter_posts = pd.DataFrame(columns=["Text", "URL", "Date", "Media", "Img"])
+    try:
+        linkedin_posts = fetch_linkedin_posts(query)
+    except Exception as e:
+        print(f"Error fetching bing news for '{query}': {e}")
+        linkedin_posts = pd.DataFrame(columns=["Text", "URL", "Date", "Media", "Img"])
+    try:
+        instagram_posts = fetch_instagram_posts(query)
+    except Exception as e:
+        print(f"Error fetching Yahoo news for '{query}': {e}")
+        instagram_posts = pd.DataFrame(columns=["Text", "URL", "Date", "Media", "Img"])
+
+    # Combine the results
+    combined_posts = pd.concat(
+        [twitter_posts, linkedin_posts, instagram_posts], ignore_index=True
+    )
+
+    return combined_posts.to_dict(orient="records")
+
+
+def fetch_us_court_records(query, start_date=None, end_date=None, count=20):
     """Fetch US court cases from CourtListener API."""
     try:
         url = f"https://www.courtlistener.com/api/rest/v4/search/?q={query}&type=r"
@@ -436,7 +463,7 @@ def fetch_us_court_records(query, start_date=None, end_date=None, count=50):
                     "Case Name": item.get("caseName", "No Case Name"),
                     "Court": item.get("court", "Unknown"),
                     "Filed Date": item.get("dateFiled", "Unknown"),
-                    "URL": item.get("docket_absolute_url", ""),
+                    "URL": f"https://www.courtlistener.com{item.get('docket_absolute_url', 'Unknown')}",
                 }
             )
 
@@ -446,7 +473,7 @@ def fetch_us_court_records(query, start_date=None, end_date=None, count=50):
         return []
 
 
-def fetch_criminal_records(query, count=50):
+def fetch_criminal_records(query, count=20):
     """Fetch criminal records from the National Sex Offender Registry."""
     try:
         url = f"https://www.nsopw.gov/api/Search?query={query}"
@@ -470,7 +497,7 @@ def fetch_criminal_records(query, count=50):
         return []
 
 
-def fetch_inmate_records(query, count=50):
+def fetch_inmate_records(query, count=20):
     """Fetch inmate records from Bureau of Prisons API."""
     try:
         url = f"https://www.bop.gov/inmateloc/api/v1/inmates?lastName={query}"
@@ -495,7 +522,7 @@ def fetch_inmate_records(query, count=50):
         return []
 
 
-def fetch_business_records(query, count=50):
+def fetch_business_records(query, count=20):
     """Fetch business records from OpenCorporates."""
     try:
         url = f"https://api.opencorporates.com/v0.4/companies/search?q={query}"
