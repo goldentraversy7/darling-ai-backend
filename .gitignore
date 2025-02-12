@@ -75,3 +75,4 @@ docs/_build/
 .code-workspace
 yahoo_news_data.csv
 darling-ai-backend.code-workspace
+chromedriver-win64/

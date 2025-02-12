@@ -11,13 +11,15 @@ from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from transformers import pipeline
 from newsapi import NewsApiClient
 from dotenv import load_dotenv  # Import dotenv to load environment variables
 import praw
 from io import BytesIO
 
 matplotlib.use("Agg")
+finbert_sentiment = pipeline("sentiment-analysis", model="ProsusAI/finbert")
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 # Load environment variables from .env file
 load_dotenv()
@@ -25,12 +27,6 @@ load_dotenv()
 # Load NewsAPI Key
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
-
-# Initialize NLTK Sentiment Analyzer
-import nltk
-
-nltk.download("vader_lexicon")
-sia = SentimentIntensityAnalyzer()
 
 # Global Configurations
 pd.set_option("display.max_colwidth", 1000)
@@ -59,7 +55,9 @@ class StockService:
             news_articles = analyze_combined_news(symbol)
 
             # Analyze stock data and generate the plot
-            stock_data, plot_buffer, plot_figure = analyze_stock_data(symbol)
+            stock_data, plot_buffer, plot_figure = StockService.analyze_stock_data(
+                symbol
+            )
 
             # Handle NaN values and convert DataFrame to JSON-serializable format
             if stock_data is not None:
@@ -77,7 +75,7 @@ class StockService:
 
             # Create response dictionary
             response = {
-                "stock_data": stock_data,
+                # "stock_data": stock_data,
                 "plot": plot_base64,
                 "news_articles": news_articles,
             }
@@ -86,6 +84,30 @@ class StockService:
         except Exception as e:
             print(f"Unexpected error: {e}")
             return json.dumps({"error": f"Unexpected error: {str(e)}"})
+
+    @staticmethod
+    def analyze_stock_data(symbol):
+        try:
+            # Fetch stock data
+            stock_data = fetch_stock_data(symbol)
+
+            # Perform analysis
+            stock_data = calculate_rsi(stock_data)
+            stock_data = detect_market_trends(stock_data)
+
+            # Generate the plot
+            plot_buffer, plot_figure = plot_market_trends(stock_data, symbol)
+            stock_data = stock_data[::-1]  # Reverse the DataFrame
+            stock_data["dTime"] = stock_data.index
+            # Return the analyzed data and plot
+            return stock_data, plot_buffer, plot_figure
+
+        except Exception as e:
+            # Log the error for debugging
+            print(f"Error in analyzing stock data for symbol '{symbol}': {e}")
+
+            # Return empty values or default placeholders
+            return None, None, None
 
     @staticmethod
     def encode_plot_as_base64(plot_figure):
@@ -111,8 +133,8 @@ def analyze_sentiment(text):
     """
     Analyze sentiment and return a score rounded to two decimal places.
     """
-    sentiment_score = sia.polarity_scores(text)["compound"]
-    return round(sentiment_score, 2)
+    result = finbert_sentiment(text)
+    return result[0]["label"], result[0]["score"]
 
 
 def fetch_yahoo_finance_news(symbol):
@@ -251,7 +273,7 @@ def fetch_reddit_posts(symbol):
         for post in reddit_posts:
             # Analyze the sentiment of the post title
             summary = (
-                f"{post.selftext[:100]}..."
+                f"{post.selftext[:200]}..."
                 if hasattr(post, "selftext")
                 else "No summary available"
             )
@@ -315,31 +337,6 @@ def analyze_combined_news(symbol):
     )
 
     return combined_news.to_dict(orient="records")
-
-
-def analyze_stock_data(symbol):
-    try:
-        # Fetch stock data
-        stock_data = fetch_stock_data(symbol)
-
-        # Perform analysis
-        stock_data = calculate_rsi(stock_data)
-        stock_data = detect_market_trends(stock_data)
-
-        # Generate the plot
-        plot_buffer, plot_figure = plot_market_trends(stock_data, symbol)
-        stock_data = stock_data[::-1]  # Reverse the DataFrame
-        stock_data["dTime"] = stock_data.index
-        print(stock_data)
-        # Return the analyzed data and plot
-        return stock_data, plot_buffer, plot_figure
-
-    except Exception as e:
-        # Log the error for debugging
-        print(f"Error in analyzing stock data for symbol '{symbol}': {e}")
-
-        # Return empty values or default placeholders
-        return None, None, None
 
 
 # Function to fetch stock data with 15-minute interval
