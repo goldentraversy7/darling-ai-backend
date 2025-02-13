@@ -98,8 +98,9 @@ def fetch_articles_with_sentiments(symbol, start_date, sources=None):
         if article["title"] in seen_titles:
             continue
         seen_titles.add(article["title"])
-
-        content = f"{article['title']}. {article['description']}"
+        content = f"{article['title']}. {article['description']}".lower()
+        if symbol.lower() not in content:
+            continue
         sentiment = analyze_sentiment(content)
         date = article.get("publishedAt", "No date available")
         date = (
@@ -127,7 +128,7 @@ def fetch_articles_with_sentiments(symbol, start_date, sources=None):
 
     if not news_df.empty:
         with app.app_context():  # ✅ Ensure the MongoDB connection is active
-            News.save_news_to_mongo(news_df.to_dict(orient="records"))
+            News.save_news_to_db(news_df.to_dict(orient="records"))
     else:
         print(f"No new articles found for {symbol}")
 

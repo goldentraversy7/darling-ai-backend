@@ -86,7 +86,7 @@ def scrape_yahoo_finance_news(symbol):
 
     if not news_df.empty:
         with app.app_context():  # ✅ Ensure the MongoDB connection is active
-            News.save_news_to_mongo(news_df.to_dict(orient="records"))
+            News.save_news_to_db(news_df.to_dict(orient="records"))
     else:
         print(f"No new articles found for {symbol}")
 
