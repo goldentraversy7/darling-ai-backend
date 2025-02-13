@@ -3,12 +3,9 @@ from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
 import os
 import re
-
-# Initialize NLTK Sentiment Analyzer
-sia = SentimentIntensityAnalyzer()
+from utils import analyze_sentiment
 
 # Global Configurations
 CHROMEDRIVER_PATH = os.path.abspath("../../chromedriver-win64/chromedriver.exe")
@@ -109,13 +106,6 @@ def scrape_yahoo_finance_news(symbol):
         print(f"No new articles found for {symbol}")
 
 
-def analyze_sentiment(text):
-    """
-    Analyze sentiment and return a score rounded to two decimal places.
-    """
-    sentiment_score = sia.polarity_scores(text)["compound"]
-    return round(sentiment_score, 2)
-
 def parse_relative_date(date_text):
     """
     Parse relative date text (e.g., '9 hours ago', 'Yahoo•9 hours ago') into a UTC datetime string.
@@ -137,6 +127,7 @@ def parse_relative_date(date_text):
 
     # If no match is found, return the current UTC time as a fallback
     return now.strftime("%Y-%m-%d")
+
 
 # Example usage for testing
 if __name__ == "__main__":

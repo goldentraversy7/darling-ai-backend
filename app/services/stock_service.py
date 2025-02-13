@@ -13,9 +13,8 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from transformers import pipeline
 from newsapi import NewsApiClient
-from dotenv import load_dotenv  # Import dotenv to load environment variables
+from dotenv import load_dotenv
 import praw
-from io import BytesIO
 import yfinance as yf
 import numpy as np
 
