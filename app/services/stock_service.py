@@ -16,6 +16,8 @@ from newsapi import NewsApiClient
 from dotenv import load_dotenv  # Import dotenv to load environment variables
 import praw
 from io import BytesIO
+import yfinance as yf
+import numpy as np
 
 matplotlib.use("Agg")
 finbert_sentiment = pipeline("sentiment-analysis", model="ProsusAI/finbert")
@@ -30,7 +32,6 @@ ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
 # Global Configurations
 pd.set_option("display.max_colwidth", 1000)
-CHROMEDRIVER_PATH = os.path.abspath("./chromedriver-win64/chromedriver.exe")
 CSV_FILE_PATH = os.path.abspath("./yahoo_news_data.csv")
 
 reddit = praw.Reddit(
@@ -52,32 +53,15 @@ class StockService:
         """
         try:
             # Fetch news articles (ensure `analyze_combined_news` is defined elsewhere)
-            news_articles = analyze_combined_news(symbol)
+            # news_articles = analyze_combined_news(symbol)
 
             # Analyze stock data and generate the plot
-            stock_data, plot_buffer, plot_figure = StockService.analyze_stock_data(
-                symbol
-            )
-
-            # Handle NaN values and convert DataFrame to JSON-serializable format
-            if stock_data is not None:
-                # Replace NaN with None (which converts to null in JSON)
-                stock_data = stock_data.replace(
-                    [np.nan, np.inf, -np.inf], None
-                ).to_dict(orient="records")
-            else:
-                stock_data = []
-
-            # Encode plot as Base64
-            plot_base64 = (
-                StockService.encode_plot_as_base64(plot_figure) if plot_figure else None
-            )
+            stock_data = StockService.analyze_stock_data(symbol)
 
             # Create response dictionary
             response = {
-                # "stock_data": stock_data,
-                "plot": plot_base64,
-                "news_articles": news_articles,
+                "stock_data": stock_data,
+                # "news_articles": news_articles,
             }
 
             return response  # Convert response to JSON
@@ -91,41 +75,26 @@ class StockService:
             # Fetch stock data
             stock_data = fetch_stock_data(symbol)
 
-            # Perform analysis
-            stock_data = calculate_rsi(stock_data)
-            stock_data = detect_market_trends(stock_data)
-
             # Generate the plot
-            plot_buffer, plot_figure = plot_market_trends(stock_data, symbol)
-            stock_data = stock_data[::-1]  # Reverse the DataFrame
             stock_data["dTime"] = stock_data.index
             # Return the analyzed data and plot
-            return stock_data, plot_buffer, plot_figure
+            # Handle NaN values and convert DataFrame to JSON-serializable format
+            if stock_data is not None:
+                # Replace NaN with None (which converts to null in JSON)
+                stock_data = stock_data.replace(
+                    [np.nan, np.inf, -np.inf], None
+                ).to_dict(orient="records")
+            else:
+                stock_data = []
+
+            return stock_data
 
         except Exception as e:
             # Log the error for debugging
             print(f"Error in analyzing stock data for symbol '{symbol}': {e}")
 
             # Return empty values or default placeholders
-            return None, None, None
-
-    @staticmethod
-    def encode_plot_as_base64(plot_figure):
-        """
-        Encode a matplotlib plot as a Base64 string.
-        """
-        try:
-            # Create a BytesIO buffer
-            buffer = BytesIO()
-            plot_figure.savefig(buffer, format="png")  # Save the plot to the buffer
-            buffer.seek(0)  # Move to the start of the buffer
-            # Encode the buffer to Base64
-            plot_base64 = base64.b64encode(buffer.read()).decode("utf-8")
-            buffer.close()  # Close the buffer to release resources
-            return f"data:image/png;base64,{plot_base64}"
-        except Exception as e:
-            print(f"Error encoding plot as Base64: {e}")
-            raise
+            return None
 
 
 # Sentiment Analysis Function
@@ -339,107 +308,72 @@ def analyze_combined_news(symbol):
     return combined_news.to_dict(orient="records")
 
 
-# Function to fetch stock data with 15-minute interval
-def fetch_stock_data(symbol, interval="15min"):
-    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={symbol}&interval={interval}&apikey={ALPHA_VANTAGE_API_KEY}"
-    response = requests.get(url)
-    data = response.json()
+def calculate_technical_indicators(df):
+    """
+    Calculates additional technical indicators: SMA, EMA, RSI, MACD, Bollinger Bands.
+    """
+    df["SMA_20"] = df["close"].rolling(window=20).mean()
+    df["EMA_20"] = df["close"].ewm(span=20, adjust=False).mean()
 
-    timeseries = data.get(f"Time Series ({interval})", {})
-    if not timeseries:
-        raise ValueError("Failed to fetch data. Check the symbol or API usage limits.")
-
-    df = pd.DataFrame.from_dict(timeseries, orient="index")
-    df = df.rename(
-        columns={
-            "1. open": "open",
-            "2. high": "high",
-            "3. low": "low",
-            "4. close": "close",
-            "5. volume": "volume",
-        }
-    ).astype(float)
-    df.index = pd.to_datetime(df.index)
-    df.sort_index(inplace=True)
-    return df
-
-
-# Function to calculate RSI
-def calculate_rsi(df, period=14):
+    # RSI Calculation
     delta = df["close"].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df["RSI"] = 100 - (100 / (1 + rs))
+
+    # MACD Calculation
+    short_ema = df["close"].ewm(span=12, adjust=False).mean()
+    long_ema = df["close"].ewm(span=26, adjust=False).mean()
+    df["MACD"] = short_ema - long_ema
+    df["Signal_Line"] = df["MACD"].ewm(span=9, adjust=False).mean()
+
+    # Bollinger Bands
+    df["BB_Upper"] = df["SMA_20"] + (df["close"].rolling(window=20).std() * 2)
+    df["BB_Lower"] = df["SMA_20"] - (df["close"].rolling(window=20).std() * 2)
+
     return df
 
 
-# Detect bull and bear trends based on moving averages
-def detect_market_trends(df, short_window=20, long_window=50):
-    df["SMA_short"] = df["close"].rolling(window=short_window).mean()
-    df["SMA_long"] = df["close"].rolling(window=long_window).mean()
-    df["Trend"] = np.where(df["SMA_short"] > df["SMA_long"], "Bull", "Bear")
-    return df
+def fetch_stock_data(symbol, interval="1d", period="6mo"):
+    """
+    Fetch historical stock data using Yahoo Finance (yfinance).
 
+    :param symbol: Stock ticker symbol.
+    :param interval: Interval of stock data (e.g., "1d", "1wk", "1mo").
+    :param period: How much history to fetch (e.g., "6mo", "1y", "5y").
+    :return: Pandas DataFrame with stock data and indicators.
+    """
+    try:
+        stock = yf.Ticker(symbol)
+        df = stock.history(period=period, interval=interval)
 
-def plot_market_trends(stock_data, symbol):
-    fig, ax = plt.subplots(figsize=(14, 8))
+        if df.empty:
+            return None
 
-    # Plot the data
-    ax.plot(
-        stock_data.index,
-        stock_data["close"],
-        label="Close Price",
-        color="blue",
-        linewidth=1,
-    )
-    ax.plot(
-        stock_data.index,
-        stock_data["SMA_short"],
-        label="Short-term SMA (20)",
-        color="orange",
-        linewidth=1,
-    )
-    ax.plot(
-        stock_data.index,
-        stock_data["SMA_long"],
-        label="Long-term SMA (50)",
-        color="green",
-        linewidth=1,
-    )
+        # Keep relevant columns and rename
+        df = df[["Open", "High", "Low", "Close", "Volume"]]
+        df = df.rename(
+            columns={
+                "Open": "open",
+                "High": "high",
+                "Low": "low",
+                "Close": "close",
+                "Volume": "volume",
+            }
+        )
 
-    # Highlight bull and bear markets
-    ax.fill_between(
-        stock_data.index,
-        stock_data["close"],
-        stock_data["SMA_long"],
-        where=(stock_data["close"] > stock_data["SMA_long"]),
-        color="green",
-        alpha=0.2,
-        label="Bull Market",
-    )
-    ax.fill_between(
-        stock_data.index,
-        stock_data["close"],
-        stock_data["SMA_long"],
-        where=(stock_data["close"] < stock_data["SMA_long"]),
-        color="red",
-        alpha=0.2,
-        label="Bear Market",
-    )
+        # Add stock symbol as a feature
+        df["symbol"] = symbol
 
-    # Customize the plot
-    ax.set_title(f"{symbol.upper()} Market Trends (15-Minute Interval)", fontsize=16)
-    ax.set_xlabel("Time", fontsize=12)
-    ax.set_ylabel("Price (USD)", fontsize=12)
-    ax.legend(fontsize=10)
-    ax.grid(alpha=0.3)
-    plt.tight_layout()
+        # Calculate additional technical indicators
+        df = calculate_technical_indicators(df)
 
-    # Save the plot to a buffer
-    buffer = BytesIO()
-    plt.savefig(buffer, format="png", dpi=300)
-    buffer.seek(0)
-    plt.close()
+        # Convert datetime index to string for JSON response
+        df.index = df.index.strftime("%Y-%m-%d")
 
-    return buffer, fig
+        return df
+
+    except Exception as e:
+        print(f"Error fetching stock data for {symbol}: {e}")
+        return None
