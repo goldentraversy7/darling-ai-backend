@@ -7,7 +7,7 @@ from selenium.webdriver.chrome.options import Options
 import os
 import re
 
-from app.models.news import News  # Import MongoDB save function
+from app.models import News  # Import MongoDB save function
 from app.utils.utils import analyze_sentiment
 
 # Initialize Flask app
