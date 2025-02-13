@@ -1,3 +1,4 @@
+from app import create_app
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
@@ -5,17 +6,21 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 import os
 import re
-from utils import analyze_sentiment
+
+from app.models.news import News  # Import MongoDB save function
+from app.utils.utils import analyze_sentiment
+
+# Initialize Flask app
+app = create_app()
 
 # Global Configurations
-CHROMEDRIVER_PATH = os.path.abspath("../../chromedriver-win64/chromedriver.exe")
-CSV_FILE_PATH = os.path.abspath("../../yahoo_news_data.csv")
+CHROMEDRIVER_PATH = os.path.abspath("./chromedriver-win64/chromedriver.exe")
 
 
 def scrape_yahoo_finance_news(symbol):
     """
     Scrape Yahoo Finance news articles dynamically loaded by JavaScript.
-    Save the scraped data to a CSV file if not already present.
+    Save the scraped data to MongoDB if not already present.
     """
     # Configure Selenium WebDriver
     chrome_service = webdriver.ChromeService(executable_path=CHROMEDRIVER_PATH)
@@ -74,34 +79,14 @@ def scrape_yahoo_finance_news(symbol):
             articles.append((symbol, title, link, utc_date, summary, sentiment))
 
     # Convert to DataFrame
-    new_data = pd.DataFrame(
+    news_df = pd.DataFrame(
         articles,
-        columns=["Symbol", "Title", "URL", "Date", "Summary", "Sentiment"],
+        columns=["Symbol", "Title", "URL", "dDate", "Summary", "Sentiment"],
     )
-    new_data = new_data.iloc[::-1]
 
-    # Check if CSV exists
-    if os.path.exists(CSV_FILE_PATH):
-        existing_data = pd.read_csv(CSV_FILE_PATH)
-
-        # Filter the last 50 news for the same symbol
-        last_50 = existing_data[existing_data["Symbol"] == symbol].tail(50)
-
-        # Remove duplicates by checking against the last 50 news
-        new_data = new_data[
-            ~new_data["Title"].isin(last_50["Title"])
-            & ~new_data["URL"].isin(last_50["URL"])
-        ]
-
-    if not new_data.empty:
-        # Append only new data to the CSV
-        new_data.to_csv(
-            CSV_FILE_PATH,
-            mode="a",
-            header=not os.path.exists(CSV_FILE_PATH),
-            index=False,
-        )
-        print(f"Saved {len(new_data)} new articles for {symbol} to {CSV_FILE_PATH}")
+    if not news_df.empty:
+        with app.app_context():  # ✅ Ensure the MongoDB connection is active
+            News.save_news_to_mongo(news_df.to_dict(orient="records"))
     else:
         print(f"No new articles found for {symbol}")
 
@@ -129,6 +114,7 @@ def parse_relative_date(date_text):
     return now.strftime("%Y-%m-%d")
 
 
-# Example usage for testing
+# ✅ Run the scraper inside Flask app context
 if __name__ == "__main__":
-    scrape_yahoo_finance_news("AAPL")
+    with app.app_context():  # Ensure MongoDB is initialized before running
+        scrape_yahoo_finance_news("AAPL")

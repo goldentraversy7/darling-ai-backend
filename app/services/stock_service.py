@@ -14,30 +14,20 @@ from selenium.webdriver.chrome.options import Options
 from transformers import pipeline
 from newsapi import NewsApiClient
 from dotenv import load_dotenv
-import praw
 import yfinance as yf
 import numpy as np
 
 matplotlib.use("Agg")
-finbert_sentiment = pipeline("sentiment-analysis", model="ProsusAI/finbert")
-os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Load NewsAPI Key
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
-ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
 # Global Configurations
 pd.set_option("display.max_colwidth", 1000)
 CSV_FILE_PATH = os.path.abspath("./yahoo_news_data.csv")
-
-reddit = praw.Reddit(
-    client_id=os.getenv("REDDIT_CLIENT_ID"),
-    client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
-    user_agent=os.getenv("REDDIT_USER_AGENT"),
-)
 
 
 class StockService:
@@ -94,15 +84,6 @@ class StockService:
 
             # Return empty values or default placeholders
             return None
-
-
-# Sentiment Analysis Function
-def analyze_sentiment(text):
-    """
-    Analyze sentiment and return a score rounded to two decimal places.
-    """
-    result = finbert_sentiment(text)
-    return result[0]["label"], result[0]["score"]
 
 
 def fetch_yahoo_finance_news(symbol):
@@ -228,48 +209,6 @@ def fetch_articles_with_sentiments(keyword, start_date, sources=None):
     )
 
 
-def fetch_reddit_posts(symbol):
-    """
-    Fetch Reddit posts from the 'stocks' subreddit related to the given symbol.
-    Analyze the sentiment of each post and return the results as a DataFrame.
-    """
-    try:
-        # Search for posts in the 'stocks' subreddit
-        reddit_posts = reddit.subreddit("stocks").search(symbol, limit=20)
-        articles_data = []
-
-        for post in reddit_posts:
-            # Analyze the sentiment of the post title
-            summary = (
-                f"{post.selftext[:200]}..."
-                if hasattr(post, "selftext")
-                else "No summary available"
-            )
-            sentiment_score = analyze_sentiment(f"{post.title} {summary}")
-
-            # Append processed data to the list
-            articles_data.append(
-                {
-                    "Title": post.title,
-                    "URL": f"https://reddit.com{post.permalink}",
-                    "Date": datetime.fromtimestamp(post.created_utc).strftime(
-                        "%Y-%m-%d"
-                    ),
-                    "Summary": summary,
-                    "Sentiment": sentiment_score,
-                }
-            )
-
-        # Return the data as a DataFrame
-        return pd.DataFrame(
-            articles_data, columns=["Title", "URL", "Date", "Summary", "Sentiment"]
-        )
-    except Exception as e:
-        print(f"Error fetching Reddit posts for '{symbol}': {e}")
-        # Return an empty DataFrame in case of an error
-        return pd.DataFrame(columns=["Title", "URL", "Date", "Summary", "Sentiment"])
-
-
 # Combine News from Multiple Sources
 def analyze_combined_news(symbol):
     """
@@ -291,18 +230,8 @@ def analyze_combined_news(symbol):
             columns=["Title", "URL", "Date", "Summary", "Sentiment"]
         )
 
-    try:
-        reddit_posts = fetch_reddit_posts(symbol)
-    except Exception as e:
-        print(f"Error fetching Reddit articles for '{symbol}': {e}")
-        reddit_posts = pd.DataFrame(
-            columns=["Title", "URL", "Date", "Summary", "Sentiment"]
-        )
-
     # Combine the results
-    combined_news = pd.concat(
-        [yahoo_news, newsapi_articles, reddit_posts], ignore_index=True
-    )
+    combined_news = pd.concat([yahoo_news, newsapi_articles], ignore_index=True)
 
     return combined_news.to_dict(orient="records")
 
