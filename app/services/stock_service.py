@@ -5,17 +5,14 @@ import base64
 import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from transformers import pipeline
 from newsapi import NewsApiClient
 from dotenv import load_dotenv
 import yfinance as yf
 import numpy as np
+from datetime import datetime, timedelta
 from app.models import News  # Import MongoDB save function
-
+from app.models import Symbol  # Import MongoDB model
+from app.ai.predict_lstm import predict_stock_price, check_and_train_new_symbol
 
 # Load environment variables from .env file
 load_dotenv()
@@ -39,11 +36,35 @@ class StockService:
         Fetch stock data from multiple sources for a given stock symbol.
         """
         try:
-            news_articles = StockService.fetch_news_articles(symbol)
-
+            if not Symbol.is_symbol_tracked(symbol):
+                Symbol.save_symbol(symbol)  # Save new symbol
+                train_flag = check_and_train_new_symbol(
+                    symbol
+                )  # Start fine-tuning in the background
+                if train_flag:
+                    return {
+                        "message": f"New stock {symbol} detected. Training model...",
+                        "data": {},
+                        "status": 202,
+                    }
             # Analyze stock data and generate the plot
+            news_articles = StockService.fetch_news_articles(symbol)
             stock_data = StockService.analyze_stock_data(symbol)
+            predicted_prices = predict_stock_price(symbol)
 
+            if predicted_prices is not None and len(predicted_prices) == 3:
+                latest_date = datetime.utcnow().date()
+
+                # Append predictions as new entries
+                for i, price in enumerate(predicted_prices):
+                    future_date = latest_date + timedelta(days=i + 1)
+                    stock_data.append(
+                        {
+                            "dDate": future_date.strftime("%Y-%m-%d"),
+                            "close": price,
+                            "Predicted": True,  # Flag as predicted data
+                        }
+                    )
             # Create response dictionary
             response = {
                 "stock_data": stock_data,

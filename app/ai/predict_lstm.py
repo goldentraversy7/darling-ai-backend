@@ -1,29 +1,33 @@
-from app import create_app
+import os
 import torch
 import pickle
 import numpy as np
-from app.ai.stock_lstm import StockLSTM
-from app.services.stock_service import StockService
 import threading
+from flask import current_app
+from app.ai.stock_lstm import StockLSTM
 from app.ai.train_lstm import fine_tune_lstm
 
-# Initialize Flask app
-app = create_app()
-
-
 # Paths to stored model and scalers
-MODEL_PATH = "models_storage/best_lstm_model.pth"
-SCALER_PATH = "models_storage/scaler.pkl"
-ENCODER_PATH = "models_storage/label_encoder.pkl"
+MODEL_DIR = os.path.abspath("models_storage")  # Ensure absolute path
+MODEL_PATH = os.path.join(MODEL_DIR, "best_lstm_model.pth")
+SCALER_PATH = os.path.join(MODEL_DIR, "scaler.pkl")
+ENCODER_PATH = os.path.join(MODEL_DIR, "label_encoder.pkl")
+
+
+def get_app():
+    """Get the Flask app context safely to avoid circular import."""
+    from app import (
+        create_app,
+    )  # Moved import inside function to prevent circular import
+
+    return create_app()
 
 
 def load_trained_lstm():
-    """
-    Load the trained LSTM model for stock prediction.
-    """
+    """Load the trained LSTM model for stock prediction."""
     input_size = 9  # Number of input features
     model = StockLSTM(input_size)
-    model.load_state_dict(torch.load(MODEL_PATH))
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device("cpu")))
     model.eval()
     return model
 
@@ -32,7 +36,12 @@ def prepare_data_for_prediction(symbol, lookback=60):
     """
     Fetch latest stock data, process it, and prepare for LSTM model input.
     """
-    merged_data = StockService.merge_sentiment_with_stock(symbol)
+    from app.services import (
+        StockService,
+    )
+
+    with current_app.app_context():  # Ensures Flask app context is active
+        merged_data = StockService.merge_sentiment_with_stock(symbol)
 
     # Load scaler and label encoder
     with open(SCALER_PATH, "rb") as f:
@@ -120,11 +129,15 @@ def check_and_train_new_symbol(symbol):
         label_encoder = pickle.load(f)
 
     if symbol not in label_encoder.classes_:
-        print(f"🚀 New stock detected: {symbol}. Fine-tuning model...")
-        threading.Thread(target=fine_tune_lstm, args=([symbol],)).start()
+        print(f"New stock detected: {symbol}. Fine-tuning model...")
+        threading.Thread(target=fine_tune_lstm, args=([symbol],), daemon=True).start()
+        return True
+    else:
+        return False
 
 
-#  Run the scraper inside Flask app context
+# Run inside Flask app context
 if __name__ == "__main__":
+    app = get_app()  # Initialize Flask app safely
     with app.app_context():
         predict_stock_price("AAPL")

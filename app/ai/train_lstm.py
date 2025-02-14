@@ -1,28 +1,40 @@
 import os
-from app import create_app
 import torch
 import torch.optim as optim
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset, random_split
+from flask import current_app
 from app.ai.stock_lstm import StockLSTM
 from app.ai.preprocess import prepare_stock_data
 
-# Initialize Flask app
-app = create_app()
+
+def get_app():
+    """Get the Flask app context safely to avoid circular import."""
+    from app import (
+        create_app,
+    )  # Moved import inside function to prevent circular import
+
+    return create_app()
+
 
 # Detect device (CPU or GPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-MODEL_PATH = "models_storage/best_lstm_model.pth"
+# Paths to stored model
+MODEL_DIR = os.path.abspath("models_storage")
+MODEL_PATH = os.path.join(MODEL_DIR, "best_lstm_model.pth")
 
 
-def fine_tune_lstm(stock_symbols, num_epochs=40, patience=5):
+def fine_tune_lstm(stock_symbols, num_epochs=40, patience=10):
     """
     Fine-tunes the LSTM model with stock and sentiment data.
     Implements validation loss tracking and Early Stopping.
     """
-    X, y = prepare_stock_data(stock_symbols)
+
+    app = get_app()
+    with app.app_context():  # ✅ Ensures Flask app context is active
+        X, y = prepare_stock_data(stock_symbols)
 
     # Convert to PyTorch tensors
     X_tensor = torch.tensor(X, dtype=torch.float32)
@@ -42,11 +54,13 @@ def fine_tune_lstm(stock_symbols, num_epochs=40, patience=5):
 
     input_size = X.shape[2]
     model = StockLSTM(input_size)
+
+    # Load existing model if available
     if os.path.exists(MODEL_PATH):
-        model.load_state_dict(torch.load(MODEL_PATH))  # Load existing model
+        model.load_state_dict(torch.load(MODEL_PATH))
 
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0005)
+    optimizer = optim.Adam(model.parameters(), lr=0.0004)
 
     # Early stopping parameters
     best_val_loss = float("inf")
@@ -95,7 +109,8 @@ def fine_tune_lstm(stock_symbols, num_epochs=40, patience=5):
     return model
 
 
-# Run training
+# Run inside Flask app context
 if __name__ == "__main__":
+    app = get_app()  # Initialize Flask app safely
     with app.app_context():
         fine_tune_lstm(["AAPL", "GOOGL", "MSFT", "TSLA"])  # Train on multiple stocks
