@@ -8,7 +8,7 @@ import os
 import re
 
 from app.models import News  # Import MongoDB save function
-from app.utils.utils import analyze_sentiment
+from app.ai.sentiment_analysis import analyze_sentiment
 
 # Initialize Flask app
 app = create_app()
@@ -85,7 +85,7 @@ def scrape_yahoo_finance_news(symbol):
     )
 
     if not news_df.empty:
-        with app.app_context():  # ✅ Ensure the MongoDB connection is active
+        with app.app_context():  #  Ensure the MongoDB connection is active
             News.save_news_to_db(news_df.to_dict(orient="records"))
     else:
         print(f"No new articles found for {symbol}")
@@ -114,7 +114,7 @@ def parse_relative_date(date_text):
     return now.strftime("%Y-%m-%d")
 
 
-# ✅ Run the scraper inside Flask app context
+#  Run the scraper inside Flask app context
 if __name__ == "__main__":
     with app.app_context():  # Ensure MongoDB is initialized before running
         scrape_yahoo_finance_news("AAPL")

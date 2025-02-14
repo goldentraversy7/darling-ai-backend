@@ -56,22 +56,22 @@ class StockService:
             return json.dumps({"error": f"Unexpected error: {str(e)}"})
 
     @staticmethod
-    def fetch_news_articles(symbol):
+    def fetch_news_articles(symbol, period="1y"):
         try:
-            articles = News.fetch_news_from_db(symbol)
+            articles = News.fetch_news_from_db(symbol, period)
             return articles
         except Exception as e:
             print(f"Error fetching Yahoo Finance news from CSV for '{symbol}': {e}")
             return []
 
     @staticmethod
-    def analyze_stock_data(symbol):
+    def analyze_stock_data(symbol, period="1y"):
         try:
             # Fetch stock data
-            stock_data = fetch_stock_data(symbol)
+            stock_data = fetch_stock_data(symbol, period=period)
 
             # Generate the plot
-            stock_data["dTime"] = stock_data.index
+            stock_data["dDate"] = stock_data.index
             # Return the analyzed data and plot
             # Handle NaN values and convert DataFrame to JSON-serializable format
             if stock_data is not None:
@@ -90,6 +90,32 @@ class StockService:
 
             # Return empty values or default placeholders
             return None
+
+    @staticmethod
+    def merge_sentiment_with_stock(symbol, period="1y"):
+        stock_data = StockService.analyze_stock_data(symbol, period)
+        news_data = StockService.fetch_news_articles(symbol, period)
+
+        # Convert stock data to DataFrame (Ensure Date is in datetime format)
+        stock_df = pd.DataFrame(stock_data)
+        stock_df["dDate"] = pd.to_datetime(stock_df["dDate"])  # Convert Date column
+
+        # Convert news data to DataFrame (Extract only relevant columns)
+        news_df = pd.DataFrame(news_data, columns=["dDate", "Sentiment"])
+        news_df["dDate"] = pd.to_datetime(news_df["dDate"])  # Convert to datetime
+
+        # Aggregate daily sentiment score
+        daily_sentiment = news_df.groupby("dDate")["Sentiment"].mean().reset_index()
+
+        # Merge stock data with daily sentiment
+        merged_data = stock_df.merge(
+            daily_sentiment, left_on="dDate", right_on="dDate", how="left"
+        )
+
+        # Fill missing sentiment values with 0 (no news = neutral sentiment)
+        merged_data.loc[:, "Sentiment"] = merged_data["Sentiment"].fillna(0)
+
+        return merged_data
 
 
 def calculate_technical_indicators(df):
@@ -148,7 +174,7 @@ def fetch_stock_data(symbol, interval="1d", period="1y"):
         )
 
         # Add stock symbol as a feature
-        df["symbol"] = symbol
+        df["Symbol"] = symbol
 
         # Calculate additional technical indicators
         df = calculate_technical_indicators(df)

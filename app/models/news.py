@@ -39,10 +39,10 @@ class News:
                 }
                 mongo.db.news.insert_one(news_document)
 
-        print(f"✅ Completed saving {len(news_data)} articles to MongoDB.")
+        print(f" Completed saving {len(news_data)} articles to MongoDB.")
 
     @staticmethod
-    def fetch_news_from_db(symbol, period="1mo"):
+    def fetch_news_from_db(symbol, period="1y"):
         """
         Retrieve news articles from MongoDB based on symbol and period.
 
@@ -59,6 +59,8 @@ class News:
             "3mo": timedelta(days=90),
             "6mo": timedelta(days=180),
             "1y": timedelta(days=365),
+            "3y": timedelta(days=1095),
+            "5y": timedelta(days=1825),
         }
 
         # Default to 1 month if period not found
@@ -82,6 +84,6 @@ class News:
             news_articles.append(article)
 
         print(
-            f"✅ Fetched {len(news_articles)} articles for {symbol} in the last {period}."
+            f" Fetched {len(news_articles)} articles for {symbol} in the last {period}."
         )
         return news_articles

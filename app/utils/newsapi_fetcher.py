@@ -5,7 +5,7 @@ from newsapi import NewsApiClient
 from dotenv import load_dotenv
 from app import create_app
 from app.models import News  # Import MongoDB save function
-from app.utils.utils import analyze_sentiment  # Import sentiment analysis
+from app.ai.sentiment_analysis import analyze_sentiment  # Import sentiment analysis
 
 # Load environment variables from .env file
 load_dotenv()
@@ -127,13 +127,13 @@ def fetch_articles_with_sentiments(symbol, start_date, sources=None):
     )
 
     if not news_df.empty:
-        with app.app_context():  # ✅ Ensure the MongoDB connection is active
+        with app.app_context():  #  Ensure the MongoDB connection is active
             News.save_news_to_db(news_df.to_dict(orient="records"))
     else:
         print(f"No new articles found for {symbol}")
 
 
-# ✅ Run the fetcher inside Flask app context
+#  Run the fetcher inside Flask app context
 if __name__ == "__main__":
     with app.app_context():  # Ensure MongoDB is initialized before running
         fetch_newsapi_articles("AAPL")
