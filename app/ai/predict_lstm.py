@@ -17,9 +17,7 @@ ENCODER_PATH = os.path.join(MODEL_DIR, "label_encoder.pkl")
 
 def get_app():
     """Get the Flask app context safely to avoid circular import."""
-    from app import (
-        create_app,
-    )  # Moved import inside function to prevent circular import
+    from app import create_app  # Moved import inside function
 
     return create_app()
 
@@ -39,54 +37,57 @@ def prepare_data_for_prediction(symbol, lookback=60):
     """
     from app.services import StockService
 
-    with current_app.app_context():  # Ensures Flask app context is active
+    with current_app.app_context():
         merged_data = StockService.merge_sentiment_with_stock(symbol)
 
-    # Load scaler and label encoder
+    # Load scaler
     with open(SCALER_PATH, "rb") as f:
         scaler = pickle.load(f)
-    with open(ENCODER_PATH, "rb") as f:
-        label_encoder = pickle.load(f)
 
-    # Log current classes
-    print(f"Existing Encoded Symbols: {label_encoder.classes_}")
+    # Load or create label encoder
+    if os.path.exists(ENCODER_PATH):
+        with open(ENCODER_PATH, "rb") as f:
+            label_encoder = pickle.load(f)
+    else:
+        print(" No label encoder found! Creating a new one.")
+        label_encoder = LabelEncoder()
+        label_encoder.classes_ = np.array([])
 
-    # Handle new stock symbols
-    if symbol not in label_encoder.classes_:
-        print(f"New stock symbol {symbol} detected! Adding to label encoder...")
+    print(f" Existing Encoded Symbols: {label_encoder.classes_}")
 
-        # 🔥 **Update Label Encoder**
-        label_encoder.classes_ = np.append(label_encoder.classes_, symbol)
+    # **Merge new symbol into label encoder (without overwriting old ones)**
+    existing_symbols = list(label_encoder.classes_)
+    if symbol not in existing_symbols:
+        print(f" New stock symbol {symbol} detected! Adding to label encoder...")
+        updated_symbols = existing_symbols + [symbol]  # Append without sorting
+        label_encoder.classes_ = np.array(updated_symbols)
 
         # **Save Updated Label Encoder**
         with open(ENCODER_PATH, "wb") as f:
             pickle.dump(label_encoder, f)
-
         print(f"Label Encoder Updated & Saved: {label_encoder.classes_}")
 
-    # Apply encoding to DataFrame
+    # Encode symbol in DataFrame
     merged_data["symbol_encoded"] = label_encoder.transform(merged_data["Symbol"])
 
-    # Select features for scaling
-    features = [
-        "close",
-        "SMA_20",
-        "EMA_20",
-        "RSI",
-        "MACD",
-        "BB_Upper",
-        "BB_Lower",
-        "Sentiment",
-        "symbol_encoded",
-    ]
-
     # Scale data
-    scaled_data = scaler.transform(merged_data[features])
+    scaled_data = scaler.transform(
+        merged_data[
+            [
+                "close",
+                "SMA_20",
+                "EMA_20",
+                "RSI",
+                "MACD",
+                "BB_Upper",
+                "BB_Lower",
+                "Sentiment",
+                "symbol_encoded",
+            ]
+        ]
+    )
 
-    # Take the last `lookback` days for prediction
-    last_days = scaled_data[-lookback:]
-
-    return np.array([last_days])  # Return as 3D array (batch, time steps, features)
+    return np.array([scaled_data[-lookback:]])  # 3D array
 
 
 def predict_stock_price(symbol):
@@ -133,39 +134,40 @@ def predict_stock_price(symbol):
 
 def check_and_train_new_symbol(symbol):
     """
-    Check if a stock symbol exists in the trained model.
-    If it's new, add it to label_encoder, save it, and fine-tune the model.
+    **Checks if a stock symbol exists in the trained model.**
+    **If new, adds it to label_encoder, saves it, and fine-tunes the model.**
     """
-    # Load existing label encoder if it exists
+
+    # **Load existing label encoder if available**
     if os.path.exists(ENCODER_PATH):
         with open(ENCODER_PATH, "rb") as f:
             label_encoder = pickle.load(f)
+        print(f" Loaded existing label encoder: {label_encoder.classes_}")
     else:
-        print("🚨 No label encoder found! Creating a new one.")
+        print(" No label encoder found! Creating a new one.")
         label_encoder = LabelEncoder()
-        label_encoder.classes_ = np.array([])  # Initialize with empty array
+        label_encoder.classes_ = np.array([])  # Start with an empty encoder
 
-    existing_classes = set(label_encoder.classes_)  # Convert to set for merging
+    existing_symbols = list(label_encoder.classes_)  # Keep original order
 
-    # Check if symbol is new
-    if symbol not in existing_classes:
-        print(f"🚀 New stock detected: {symbol}. Adding to label encoder...")
+    # **Check if symbol is new**
+    if symbol not in existing_symbols:
+        print(f" New stock detected: {symbol}. Adding to label encoder...")
 
-        # 🔥 **Update Label Encoder (Merge New + Existing Classes)**
-        updated_classes = sorted(existing_classes | {symbol})  # Merge & Sort
-        label_encoder.classes_ = np.array(updated_classes)  # Convert back to array
+        # **Update Label Encoder (Append New Symbol)**
+        label_encoder.classes_ = np.array(existing_symbols + [symbol])  # Append only
 
         # **Save Updated Label Encoder**
         with open(ENCODER_PATH, "wb") as f:
             pickle.dump(label_encoder, f)
 
-        print(f"Label Encoder Updated: {label_encoder.classes_}")
+        print(f"Label Encoder Updated & Saved: {label_encoder.classes_}")
 
-        # **Train Model in Background**
+        # **Train Model in Background (to avoid blocking main thread)**
         threading.Thread(target=fine_tune_lstm, args=([symbol],), daemon=True).start()
         return True  # Model needs training
 
-    return False  # No training needed
+    return False  # Symbol already exists, no need to train
 
 
 # Run inside Flask app context

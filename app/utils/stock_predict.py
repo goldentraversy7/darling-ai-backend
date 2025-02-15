@@ -82,7 +82,7 @@ def fine_tune_model():
     Fine-tunes the pre-trained stock prediction model with multiple stocks.
     """
     model = load_pretrained_model()
-    stock_symbols = ["AAPL", "MSFT", "TSLA", "GOOGL"]  # ✅ Training on 4 stocks
+    stock_symbols = ["AAPL", "MSFT", "TSLA", "GOOGL"]  # Training on 4 stocks
 
     X_train_list, y_train_list = [], []
     scalers = {}
@@ -91,7 +91,7 @@ def fine_tune_model():
         X_train, y_train, scaler = prepare_stock_data_for_transformer(symbol)
         X_train_list.append(X_train)
         y_train_list.append(y_train)
-        scalers[symbol] = scaler  # ✅ Save scaler for later
+        scalers[symbol] = scaler  # Save scaler for later
 
     # Stack all stock data
     X_train_combined = np.vstack(X_train_list)
@@ -116,7 +116,7 @@ def fine_tune_model():
 
     # Save fine-tuned model
     model.save_pretrained("fine_tuned_stock_model")
-    np.save("scalers.npy", scalers)  # ✅ Save scalers for future use
+    np.save("scalers.npy", scalers)  # Save scalers for future use
 
     return model, scalers
 

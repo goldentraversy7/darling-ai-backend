@@ -27,15 +27,15 @@ def prepare_stock_data(stock_symbols):
     with current_app.app_context():  # Ensure Flask app context
         all_data = []
 
-        # Load existing label encoder (if available)
+        # **Load existing label encoder (if available)**
         if os.path.exists(ENCODER_PATH):
             with open(ENCODER_PATH, "rb") as f:
                 label_encoder = pickle.load(f)
-            print(f"🔄 Loaded existing label encoder: {label_encoder.classes_}")
+            print(f" Loaded existing label encoder: {label_encoder.classes_}")
         else:
             label_encoder = LabelEncoder()
             label_encoder.classes_ = np.array([])  # Start empty
-            print("🆕 No label encoder found. Creating a new one.")
+            print(" No label encoder found. Creating a new one.")
 
         # Ensure models_storage directory exists
         os.makedirs(MODEL_DIR, exist_ok=True)
@@ -49,20 +49,24 @@ def prepare_stock_data(stock_symbols):
         # Combine all stock data
         full_data = pd.concat(all_data, ignore_index=True)
 
-        # **Handle new stock symbols in label encoder**
-        unique_symbols = full_data["Symbol"].unique()
-        new_symbols = [s for s in unique_symbols if s not in label_encoder.classes_]
+        # **Merge new symbols while preserving order**
+        existing_symbols = list(label_encoder.classes_)  # Convert to list
+        unique_symbols = list(full_data["Symbol"].unique())
 
-        if new_symbols:
-            print(f"🚀 New symbols detected: {new_symbols}")
-            label_encoder.classes_ = np.concatenate(
-                (label_encoder.classes_, new_symbols)
-            )
+        # Append only new symbols without modifying order
+        for symbol in unique_symbols:
+            if symbol not in existing_symbols:
+                existing_symbols.append(symbol)
 
-        # Encode stock symbols
-        full_data["symbol_encoded"] = label_encoder.fit_transform(full_data["Symbol"])
+        # Convert back to numpy array
+        label_encoder.classes_ = np.array(existing_symbols)
 
-        # **Ensure label encoder is always saved**
+        print(f"Updated label encoder: {label_encoder.classes_}")
+
+        # **Use .transform() to prevent overwriting existing mappings**
+        full_data["symbol_encoded"] = label_encoder.transform(full_data["Symbol"])
+
+        # **Ensure label encoder is always saved persistently**
         with open(ENCODER_PATH, "wb") as f:
             pickle.dump(label_encoder, f)
             print(f"Saved label encoder: {label_encoder.classes_}")
@@ -92,24 +96,22 @@ def prepare_stock_data(stock_symbols):
             0.0
         )  # No news = Neutral sentiment
 
-        # **Drop rows where "close" price is NaN**
         full_data.dropna(subset=["close"], inplace=True)
 
         # Scaling
         scaler = MinMaxScaler()
         scaled_data = scaler.fit_transform(full_data[features])
 
-        # Save scaler
+        # **Save scaler**
         with open(SCALER_PATH, "wb") as f:
             pickle.dump(scaler, f)
 
         # Create sequences for LSTM
         X, y = [], []
-        context_length = 60  # Use last 60 days for training
-        prediction_length = 3  # Predict next 3 days
+        context_length, prediction_length = 60, 3
 
         for i in range(len(scaled_data) - context_length - prediction_length):
-            X.append(scaled_data[i : i + context_length])  # Last 60 days
+            X.append(scaled_data[i : i + context_length])
             y.append(
                 scaled_data[
                     i + context_length : i + context_length + prediction_length, 0

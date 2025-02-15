@@ -40,25 +40,29 @@ class StockService:
             news_articles = StockService.fetch_news_articles(symbol)
             stock_data = StockService.analyze_stock_data(symbol)
             predicted_prices = predict_stock_price(symbol)
+            predictions = []
 
-            # if predicted_prices is not None and len(predicted_prices) == 3:
-            #     latest_date = datetime.utcnow().date()
+            if predicted_prices is not None and len(predicted_prices) == 3:
+                latest_date = datetime.utcnow().date()
 
-            #     # Append predictions as new entries
-            #     for i, price in enumerate(predicted_prices):
-            #         future_date = latest_date + timedelta(days=i + 1)
-            #         stock_data.append(
-            #             {
-            #                 "dDate": future_date.strftime("%Y-%m-%d"),
-            #                 "close": price,
-            #                 "Predicted": True,  # Flag as predicted data
-            #             }
-            #         )
+                # Append predictions as new entries
+                for i, price in enumerate(predicted_prices):
+                    future_date = latest_date + timedelta(days=i + 1)
+                    predictions.append(
+                        {
+                            "dDate": future_date.strftime(
+                                "%Y-%m-%d"
+                            ),  # Ensure date is a string
+                            "close": float(price),  # Convert np.float64 to native float
+                            "Predicted": True,  # Flag as predicted data
+                        }
+                    )
+
             # Create response dictionary
             response = {
                 "stock_data": stock_data,
                 "news_articles": news_articles,
-                # "predicted_prices": predicted_prices,
+                "predictions": predictions,
             }
 
             return response  # Convert response to JSON
