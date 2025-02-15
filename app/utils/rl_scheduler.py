@@ -17,7 +17,7 @@ SCHEDULED_TIME = "18:30"  # Market close time (adjust if necessary)
 def get_tracked_symbols():
     """Fetch stock symbols dynamically from MongoDB."""
     with app.app_context():
-        return Symbol.get_all_symbols()  # Assuming this method fetches all symbols
+        return Symbol.fetch_all_symbols()  # Assuming this method fetches all symbols
 
 
 def daily_update():

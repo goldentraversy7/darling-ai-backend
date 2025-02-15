@@ -20,7 +20,7 @@ SCRAPE_TIMES = ["09:00", "18:00"]  # 9 AM & 6 PM Market time
 def get_tracked_symbols():
     """Fetch all stock symbols tracked in the database."""
     with app.app_context():
-        return Symbol.get_all_symbols()  # Dynamically get symbols
+        return Symbol.fetch_all_symbols()  # Dynamically get symbols
 
 
 def scrape_all_news():
