@@ -76,3 +76,4 @@ docs/_build/
 yahoo_news_data.csv
 darling-ai-backend.code-workspace
 chromedriver-win64/
+models_storage/

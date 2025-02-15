@@ -6,6 +6,7 @@ import threading
 from flask import current_app
 from app.ai.stock_lstm import StockLSTM
 from app.ai.train_lstm import fine_tune_lstm
+from sklearn.preprocessing import LabelEncoder
 
 # Paths to stored model and scalers
 MODEL_DIR = os.path.abspath("models_storage")  # Ensure absolute path
@@ -36,9 +37,7 @@ def prepare_data_for_prediction(symbol, lookback=60):
     """
     Fetch latest stock data, process it, and prepare for LSTM model input.
     """
-    from app.services import (
-        StockService,
-    )
+    from app.services import StockService
 
     with current_app.app_context():  # Ensures Flask app context is active
         merged_data = StockService.merge_sentiment_with_stock(symbol)
@@ -49,11 +48,23 @@ def prepare_data_for_prediction(symbol, lookback=60):
     with open(ENCODER_PATH, "rb") as f:
         label_encoder = pickle.load(f)
 
-    # Encode stock symbol (handle new symbols dynamically)
+    # Log current classes
+    print(f"Existing Encoded Symbols: {label_encoder.classes_}")
+
+    # Handle new stock symbols
     if symbol not in label_encoder.classes_:
-        print(f"New stock symbol {symbol} detected! Encoding as new class.")
+        print(f"New stock symbol {symbol} detected! Adding to label encoder...")
+
+        # 🔥 **Update Label Encoder**
         label_encoder.classes_ = np.append(label_encoder.classes_, symbol)
 
+        # **Save Updated Label Encoder**
+        with open(ENCODER_PATH, "wb") as f:
+            pickle.dump(label_encoder, f)
+
+        print(f"Label Encoder Updated & Saved: {label_encoder.classes_}")
+
+    # Apply encoding to DataFrame
     merged_data["symbol_encoded"] = label_encoder.transform(merged_data["Symbol"])
 
     # Select features for scaling
@@ -123,17 +134,38 @@ def predict_stock_price(symbol):
 def check_and_train_new_symbol(symbol):
     """
     Check if a stock symbol exists in the trained model.
-    If it's new, start fine-tuning in the background.
+    If it's new, add it to label_encoder, save it, and fine-tune the model.
     """
-    with open(ENCODER_PATH, "rb") as f:
-        label_encoder = pickle.load(f)
-
-    if symbol not in label_encoder.classes_:
-        print(f"New stock detected: {symbol}. Fine-tuning model...")
-        threading.Thread(target=fine_tune_lstm, args=([symbol],), daemon=True).start()
-        return True
+    # Load existing label encoder if it exists
+    if os.path.exists(ENCODER_PATH):
+        with open(ENCODER_PATH, "rb") as f:
+            label_encoder = pickle.load(f)
     else:
-        return False
+        print("🚨 No label encoder found! Creating a new one.")
+        label_encoder = LabelEncoder()
+        label_encoder.classes_ = np.array([])  # Initialize with empty array
+
+    existing_classes = set(label_encoder.classes_)  # Convert to set for merging
+
+    # Check if symbol is new
+    if symbol not in existing_classes:
+        print(f"🚀 New stock detected: {symbol}. Adding to label encoder...")
+
+        # 🔥 **Update Label Encoder (Merge New + Existing Classes)**
+        updated_classes = sorted(existing_classes | {symbol})  # Merge & Sort
+        label_encoder.classes_ = np.array(updated_classes)  # Convert back to array
+
+        # **Save Updated Label Encoder**
+        with open(ENCODER_PATH, "wb") as f:
+            pickle.dump(label_encoder, f)
+
+        print(f"Label Encoder Updated: {label_encoder.classes_}")
+
+        # **Train Model in Background**
+        threading.Thread(target=fine_tune_lstm, args=([symbol],), daemon=True).start()
+        return True  # Model needs training
+
+    return False  # No training needed
 
 
 # Run inside Flask app context
