@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.services import StockService
 from app.models import Symbol  # Import MongoDB model
 from app.ai.predict_lstm import check_and_train_new_symbol
+import yfinance as yf
 
 
 # Define the Blueprint
@@ -19,6 +20,32 @@ def get_stock_data():
     # Call StockService to fetch stock data
     symbol = request.args.get("symbol")
     company = request.args.get("company")
+
+    # ✅ Check if symbol is provided
+    if not symbol:
+        return jsonify({"message": "Stock symbol is required", "status": 400}), 400
+
+    # ✅ Validate the stock symbol using Yahoo Finance before proceeding
+    try:
+        stock = yf.Ticker(symbol)
+        stock_info = stock.info
+        if "symbol" not in stock_info:
+            return (
+                jsonify({"message": f"Invalid stock symbol: {symbol}", "status": 400}),
+                400,
+            )
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "message": f"Error validating symbol: {symbol}",
+                    "error": str(e),
+                    "status": 500,
+                }
+            ),
+            500,
+        )
+
     if not Symbol.is_symbol_tracked(symbol):
         Symbol.save_symbol(symbol)  # Save new symbol
         train_flag = check_and_train_new_symbol(
